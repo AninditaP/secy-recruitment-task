@@ -1,42 +1,56 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from fastapi import HTTPException
 from typing import Optional
+from psycopg2.errors import UniqueViolation
+import os
+from dotenv import load_dotenv
 
-DB_PATH = "users.db"
+load_dotenv()
+
+DB_PATH = os.getenv("DATABASE_URL")
+
+def get_conn():
+    return psycopg2.connect(DB_PATH)
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            hashed_password TEXT NOT NULL,
-            full_name TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = get_conn()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        username TEXT PRIMARY KEY,
+                        hashed_password TEXT NOT NULL,
+                        full_name TEXT
+                    )
+                """)
+    finally:
+        if conn:
+            conn.close()
 
 def get_user(username: str) -> Optional[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute(
-        "SELECT username, hashed_password, full_name FROM users WHERE username = ?",
-        (username,)
-    ).fetchone()
+    conn = get_conn()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT username, hashed_password, full_name FROM users WHERE username = %s",
+            (username,)
+        )
+        row = cur.fetchone()
     conn.close()
-    if row:
-        return {"username": row["username"], "hashed_password": row["hashed_password"], "full_name": row["full_name"]}
-    return None
+    return dict(row) if row else None
 
 def create_user(username: str, hashed_password: str, full_name: str = ""):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     try:
-        conn.execute(
-            "INSERT INTO users (username, hashed_password, full_name) VALUES (?, ?, ?)",
-            (username, hashed_password, full_name)
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO users (username, hashed_password, full_name) VALUES (%s, %s, %s)",
+                    (username, hashed_password, full_name)
+                )
+    except psycopg2.errors.UniqueViolation:
         raise HTTPException(status_code=409, detail="Username already taken")
     finally:
         conn.close()

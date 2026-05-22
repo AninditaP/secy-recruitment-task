@@ -1,6 +1,25 @@
 
 services:
 
+  db:
+    image: postgres:15-alpine
+    container_name: local_postgres_db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=my_local_secure_password
+      - POSTGRES_DB=postgres
+    ports:
+      - "5434:5432"
+    networks:
+      - app-network
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   auth:
       build:
         context: ./backend/servers
@@ -11,8 +30,8 @@ services:
       container_name: auth
       ports:
         - "8003:8003"
-      env_file:
-        - ./backend/servers/Auth/.env
+      environment:
+      - DATABASE_URL=postgresql://postgres:my_local_secure_password@db:5432/postgres
       networks:
         - app-network
       restart: unless-stopped
@@ -79,5 +98,6 @@ networks:
     driver: bridge
 
 
-
+volumes:
+  pgdata:
 
