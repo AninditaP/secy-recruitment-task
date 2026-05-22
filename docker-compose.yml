@@ -1,0 +1,83 @@
+
+services:
+
+  auth:
+      build:
+        context: ./backend/servers
+        dockerfile: Dockerfile       
+        args:
+          SERVER_ID: Auth
+          PORT: 8003
+      container_name: auth
+      ports:
+        - "8003:8003"
+      env_file:
+        - ./backend/servers/Auth/.env
+      networks:
+        - app-network
+      restart: unless-stopped
+      healthcheck:
+        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+ 
+  server1:
+    build:
+      context: ./backend/servers
+      dockerfile: Dockerfile
+      args:
+        SERVER_ID: server1
+        PORT: 8001
+    container_name: server1
+    ports:
+      - "8001:8001"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+ 
+  server2:
+    build:
+      context: ./backend/servers
+      dockerfile: Dockerfile
+      args:
+        SERVER_ID: server2
+        PORT: 8002
+    container_name: server2
+    ports:
+      - "8002:8002"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+ 
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./middleware/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - server1
+      - server2
+    networks:
+      - app-network
+    restart: unless-stopped
+ 
+networks:
+  app-network:
+    driver: bridge
+
+
+
+
