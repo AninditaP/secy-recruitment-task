@@ -1,46 +1,78 @@
-
 services:
 
   db:
-    image: postgres:15-alpine
-    container_name: local_postgres_db
+    image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=my_local_secure_password
-      - POSTGRES_DB=postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: my_local_secure_password
+      POSTGRES_DB: postgres
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
     ports:
-      - "5434:5432"
+      - "5432:5432"
     networks:
       - app-network
-    volumes:
-      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  postgres_canvas:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: picasso
+      POSTGRES_PASSWORD: picasso123
+      POSTGRES_DB: canvas_db
+    volumes:
+      - canvas_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U picasso -d canvas_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   auth:
-      build:
-        context: ./backend/servers
-        dockerfile: Dockerfile       
-        args:
-          SERVER_ID: Auth
-          PORT: 8003
-      container_name: auth
-      ports:
-        - "8003:8003"
-      environment:
-      - DATABASE_URL=postgresql://postgres:my_local_secure_password@db:5432/postgres
-      networks:
-        - app-network
-      restart: unless-stopped
-      healthcheck:
-        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
-        interval: 30s
-        timeout: 10s
-        retries: 3
- 
+    build:
+      context: ./backend/servers
+      dockerfile: Dockerfile
+      args:
+        SERVER_ID: Auth
+        PORT: 8003
+    container_name: auth
+    env_file:
+      - ./backend/servers/Auth/.env
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./backend/servers/Auth:/app
+      - ./backend/servers/canvas:/app/canvas
+    command: uvicorn main:app --host 0.0.0.0 --port 8003 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+      postgres_canvas:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
   server1:
     build:
       context: ./backend/servers
@@ -49,17 +81,23 @@ services:
         SERVER_ID: server1
         PORT: 8001
     container_name: server1
+    env_file:
+      - ./backend/servers/server1/.env
     ports:
       - "8001:8001"
+    volumes:
+      - ./backend/servers/server1:/app
+      - ./backend/servers/canvas:/app/canvas
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    depends_on:
+      postgres_canvas:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - app-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
- 
+
   server2:
     build:
       context: ./backend/servers
@@ -68,22 +106,27 @@ services:
         SERVER_ID: server2
         PORT: 8002
     container_name: server2
+    env_file:
+      - ./backend/servers/server2/.env
     ports:
       - "8002:8002"
+    volumes:
+      - ./backend/servers/server2:/app
+      - ./backend/servers/canvas:/app/canvas
+    command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+    depends_on:
+      postgres_canvas:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - app-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
- 
   nginx:
     image: nginx:alpine
     container_name: nginx
     ports:
-      - "8080:8080"
+      - "8080:8080"  # Match the port 8080 specified inside your nginx.conf
     volumes:
       - ./middleware/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -92,12 +135,11 @@ services:
     networks:
       - app-network
     restart: unless-stopped
- 
+
 networks:
   app-network:
     driver: bridge
 
-
 volumes:
-  pgdata:
-
+  auth_db_data:
+  canvas_db_data:

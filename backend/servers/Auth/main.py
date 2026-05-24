@@ -5,10 +5,11 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from database import init_db, get_user, create_user
+from database import Base, init_db, get_user, create_user, engine
 from middleware import register_middlewares
 import os
 from dotenv import load_dotenv
+from room import router as rooms_router
 
 load_dotenv()
 
@@ -16,19 +17,22 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 SECRET_KEY= os.getenv("SECRET_KEY")
 
-app= FastAPI(title="JWT Auth Demo (SQLite)")
+app= FastAPI(title="JWT Auth Demo")
 register_middlewares(app)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login") 
+app.include_router(rooms_router)
 
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=20)
     password: str = Field(..., min_length=6)
-    full_name: Optional[str] = None
+
 
 class UserPublic(BaseModel):
     username: str
-    full_name: Optional[str] = None
+    user_id: str
+    class Config:
+        from_attributes = True
 
 class Token(BaseModel):
     access_token: str
@@ -48,7 +52,7 @@ def create_access_token(data: dict, expires_minutes: int = ACCESS_TOKEN_EXPIRE_M
 
 def authenticate_user(username: str, password: str) -> Optional[dict]:
     user = get_user(username)
-    if not user or not verify_password(password, user["hashed_password"]):
+    if not user or not verify_password(password, user.hashed_password):
         return None
     return user
 
@@ -69,12 +73,24 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserPublic:
     user = get_user(username)
     if not user:
         raise cred_exc
-    return UserPublic(username=user["username"], full_name=user.get("full_name"))
+       
+    return UserPublic(username=user.username, user_id=str(user.user_id))
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
+   
+    if hasattr(engine, "run_sync"):
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        # If your engine is standard synchronous SQLAlchemy
+        Base.metadata.create_all(bind=engine)
 
 @app.post("/register", status_code=201, summary="Create a new user")
 def register_user(body: UserCreate):
     hashed = hash_password(body.password)
-    create_user(body.username, hashed, body.full_name or "")
+    create_user(body.username, hashed)
     return {"message": "User registered successfully"}
 
 @app.post("/login", response_model=Token)
@@ -82,7 +98,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    access_token = create_access_token({"sub": user["username"]})
+    access_token = create_access_token({"sub": user.username,"user_id": str(user.user_id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/me", response_model=UserPublic, summary="Get my profile (protected)")
@@ -93,7 +109,5 @@ def read_me(current_user: UserPublic = Depends(get_current_user)):
 def health():
     return {"status": "ok", "server": "auth"}
 
-@app.on_event("startup")
-def on_startup():
-    init_db()
+
 

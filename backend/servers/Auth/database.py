@@ -1,56 +1,32 @@
-import psycopg2
-import psycopg2.extras
-from fastapi import HTTPException
-from typing import Optional
-from psycopg2.errors import UniqueViolation
+from sqlalchemy import create_engine, String, Column, text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 import os
-from dotenv import load_dotenv
+import uuid
 
-load_dotenv()
 
 DB_PATH = os.getenv("DATABASE_URL")
+engine = create_engine(DB_PATH)
+Base=declarative_base()
 
-def get_conn():
-    return psycopg2.connect(DB_PATH)
+class User(Base):
+    __tablename__ = "users"
+    user_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
 
 def init_db():
-    conn = None
-    try:
-        conn = get_conn()
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        username TEXT PRIMARY KEY,
-                        hashed_password TEXT NOT NULL,
-                        full_name TEXT
-                    )
-                """)
-    finally:
-        if conn:
-            conn.close()
+    Base.metadata.create_all(engine)
 
-def get_user(username: str) -> Optional[dict]:
-    conn = get_conn()
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(
-            "SELECT username, hashed_password, full_name FROM users WHERE username = %s",
-            (username,)
-        )
-        row = cur.fetchone()
-    conn.close()
-    return dict(row) if row else None
+def get_user(username: str):
+    with Session(engine) as session:
+        return session.query(User).filter(User.username == username).first()
 
-def create_user(username: str, hashed_password: str, full_name: str = ""):
-    conn = get_conn()
-    try:
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO users (username, hashed_password, full_name) VALUES (%s, %s, %s)",
-                    (username, hashed_password, full_name)
-                )
-    except psycopg2.errors.UniqueViolation:
-        raise HTTPException(status_code=409, detail="Username already taken")
-    finally:
-        conn.close()
+def create_user(username: str, hashed_password: str):
+    with Session(engine) as session:
+        new_user = User(username=username, hashed_password=hashed_password)
+        session.add(new_user)
+        session.commit()
+        session.refresh(new_user)
+        return new_user
