@@ -7,6 +7,10 @@ function getToken(): string | null {
 }
 
 async function apiFetch(path: string, options: RequestInit = {}) {
+
+  const fullUrl = `${AUTH_URL}${path}`;
+  console.log(`Fetching: ${fullUrl}`);
+  
   const token = getToken()
   const res = await fetch(`${AUTH_URL}${path}`, {
     ...options,

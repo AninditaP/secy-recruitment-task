@@ -50,24 +50,30 @@ async def init_db():
 
 async def create_room(name: str, owner_id: str, owner_username: str):
     async with AsyncSessionLocal() as session:
-        room = Room(
-            name=name,
-            owner_id=uuid.UUID(owner_id),
-            owner_username=owner_username,
-            member_count=1       
-        )
-        session.add(room)
-        await session.flush()
+     
+        async with session.begin():
+            new_room = Room(
+                name=name,
+                owner_id=uuid.UUID(owner_id),
+                owner_username=owner_username,
+                member_count=1       
+            )
+            session.add(new_room)
+            await session.flush() 
 
-        member = RoomMember(
-            room_id=room.id,
-            user_id=uuid.UUID(owner_id),
-            username=owner_username
-        )
-        session.add(member)
-        await session.commit()
-        await session.refresh(room)
-        return room
+            stmt = insert(RoomMember).values(
+                room_id=new_room.id,
+                user_id=uuid.UUID(owner_id),
+                username=owner_username
+            )
+            stmt = stmt.on_conflict_do_nothing(index_elements=['room_id', 'user_id'])
+            await session.execute(stmt)
+            
+         
+            await session.refresh(new_room)
+            
+       
+        return new_room
 
 async def get_room(room_id: str):
     async with AsyncSessionLocal() as session:
@@ -87,19 +93,24 @@ async def set_room_inactive(room_id: str):
 
 async def add_member(room_id: str, user_id: str, username: str):
     async with AsyncSessionLocal() as session:
-        member = RoomMember(
-            room_id=uuid.UUID(room_id),
-            user_id=uuid.UUID(user_id),
-            username=username
-        )
-        session.add(member)
-        await session.flush()
-        await session.execute(
-            update(Room)
-            .where(Room.id == uuid.UUID(room_id))
-            .values(member_count=Room.member_count + 1)
-        )
-        await session.commit()
+        # Check if they exist first
+        exists = await is_member(room_id, user_id)
+        
+        if not exists:
+            member = RoomMember(
+                room_id=uuid.UUID(room_id),
+                user_id=uuid.UUID(user_id),
+                username=username
+            )
+            session.add(member)
+            
+            # Only update count if the insert actually happened
+            await session.execute(
+                update(Room)
+                .where(Room.id == uuid.UUID(room_id))
+                .values(member_count=Room.member_count + 1)
+            )
+            await session.commit()
 
 async def remove_member(room_id: str, user_id: str):
     async with AsyncSessionLocal() as session:

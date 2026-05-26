@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useRouter } from "next/navigation"
 
-const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL || "http://localhost:8003"
+const AUTH_URL = "http://localhost:8080"
 
 function getToken() {
   return typeof window !== "undefined"
@@ -55,12 +55,11 @@ export function WaitingRoom() {
     setError("")
 
     try {
-      const res = await apiFetch("/rooms", { // Removed trailing slash just in case
+      const res = await apiFetch("/rooms", { 
         method: "POST",
         body: JSON.stringify({ name: roomName }),
       })
-      
-      // ALERTS only, no routing
+ 
       if (res && res.room_id) {
         alert(`Room created successfully!\n\nRoom ID: ${res.room_id}\n\nCopy this ID to join the room via the 'Join Room' tab.`)
       } else {
