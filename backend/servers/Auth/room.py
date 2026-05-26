@@ -41,12 +41,8 @@ async def create_room_route(
     body: CreateRoomBody,
     user: dict = Depends(get_user_from_token)
 ):
-    # Create the room
     room = await create_room(body.name, user["user_id"], user["username"])
     room_id = str(room.id)
-    
-    # Add the owner as the first member
-    await add_member(room_id, user["user_id"], user["username"])
 
     return {
         "room_id": room_id,

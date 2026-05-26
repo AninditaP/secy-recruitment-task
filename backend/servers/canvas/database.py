@@ -186,3 +186,4 @@ async def upsert_snapshot(room_id: str, data: bytes):
         )
         await session.execute(stmt)
         await session.commit()
+        
