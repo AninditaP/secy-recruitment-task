@@ -22,6 +22,8 @@ ALGORITHM = "HS256"
 SERVER_ID = os.getenv("SERVER_ID", "server1")
 
 
+control_connections: dict[str, dict[str, WebSocket]] = {}
+
 
 async def on_owner_absent(room_id: str):
     await set_room_inactive(room_id)
@@ -34,6 +36,16 @@ async def on_owner_absent(room_id: str):
 
 manager.set_owner_absent_callback(on_owner_absent)
 
+
+async def broadcast_to_control(room_id: str, raw: bytes):
+    dead = []
+    for uid, ws in control_connections.get(room_id, {}).items():
+        try:
+            await ws.send_text(raw.decode())
+        except Exception:
+            dead.append(uid)
+    for uid in dead:
+        control_connections.get(room_id, {}).pop(uid, None)
 
 
 async def redis_subscriber():
@@ -56,15 +68,21 @@ async def redis_subscriber():
 
             if msg_type in ("room_closing", "user_joined", "user_left"):
                 await manager.broadcast_local(room_id, raw)
+                await broadcast_to_control(room_id, raw)
 
             elif msg_type == "kick":
                 kicked_uid = control.get("user_id")
                 if manager.is_connected(room_id, kicked_uid):
                     await manager.send_to_user(room_id, kicked_uid, raw)
+                ws = control_connections.get(room_id, {}).get(kicked_uid)
+                if ws:
+                    try:
+                        await ws.send_text(raw.decode())
+                    except Exception:
+                        control_connections.get(room_id, {}).pop(kicked_uid, None)
 
         except (json.JSONDecodeError, UnicodeDecodeError):
             await manager.broadcast_local(room_id, raw)
-
 
 
 @asynccontextmanager
@@ -78,7 +96,6 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 app = FastAPI(lifespan=lifespan)
-
 
 
 def decode_token(token: str) -> dict:
@@ -167,7 +184,8 @@ async def canvas_ws(
     await manager.broadcast_local(room_id, leave_msg)
     await publish(room_id, leave_msg)
 
-    await upsert_snapshot(room_id, None)
+   # await upsert_snapshot(room_id, None)
+    pass
 
 
 @app.websocket("/control/{room_id}")
@@ -199,6 +217,12 @@ async def control_ws(
 
     await websocket.accept()
 
+    # Register control connection
+    if room_id not in control_connections:
+        control_connections[room_id] = {}
+    control_connections[room_id][user_id] = websocket
+
+    # Send initial members list
     existing_members = await get_members(room_id)
     await websocket.send_text(json.dumps({
         "type": "members_list",
@@ -212,6 +236,9 @@ async def control_ws(
                 break
     except WebSocketDisconnect:
         pass
+    finally:
+        # Unregister on disconnect
+        control_connections.get(room_id, {}).pop(user_id, None)
 
 
 @app.get("/health")

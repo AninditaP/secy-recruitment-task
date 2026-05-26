@@ -174,7 +174,9 @@ async def get_snapshot(room_id: str):
         return bytes(snapshot.data) if snapshot else None
 
 
-async def upsert_snapshot(room_id: str, data: bytes):
+async def upsert_snapshot(room_id: str, data: bytes | None):
+    if data is None:
+        return  
     async with AsyncSessionLocal() as session:
         stmt = insert(CanvasSnapshot).values(
             room_id=uuid.UUID(room_id),

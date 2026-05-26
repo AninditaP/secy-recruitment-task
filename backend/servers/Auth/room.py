@@ -35,7 +35,6 @@ def get_user_from_token(token: str = Depends(oauth2_scheme)):
 class CreateRoomBody(BaseModel):
     name: str
 
-# FIX: Removed trailing slash and fixed redundant logic
 @router.post("")
 async def create_room_route(
     body: CreateRoomBody,
@@ -43,6 +42,7 @@ async def create_room_route(
 ):
     room = await create_room(body.name, user["user_id"], user["username"])
     room_id = str(room.id)
+
 
     return {
         "room_id": room_id,

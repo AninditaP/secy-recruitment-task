@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useRouter } from "next/navigation"
 
-const AUTH_URL = "http://localhost:8080"
+const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL 
 
 function getToken() {
   return typeof window !== "undefined"
@@ -37,41 +37,41 @@ export function WaitingRoom() {
   const router = useRouter()
   const [roomName, setRoomName] = useState("")
   const [joinRoomId, setJoinRoomId] = useState("")
+  const [createdRoomId, setCreatedRoomId] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
   const handleCreateRoom = async () => {
-    const token = getToken()
-   
-    if (!roomName.trim()) {
-      setError("Room name cannot be empty")
-      return
-    }
-    if (!token) {
-      router.push("/Auth/login")
-      return
-    }
-    setIsLoading(true)
-    setError("")
-
-    try {
-      const res = await apiFetch("/rooms", { 
-        method: "POST",
-        body: JSON.stringify({ name: roomName }),
-      })
- 
-      if (res && res.room_id) {
-        alert(`Room created successfully!\n\nRoom ID: ${res.room_id}\n\nCopy this ID to join the room via the 'Join Room' tab.`)
-      } else {
-        throw new Error("No room ID returned from server")
-      }
-
-    } catch (err: any) {
-      setError(err.message || "Failed to create room")
-    } finally {
-      setIsLoading(false)
-    }
+  const token = getToken()
+  if (!roomName.trim()) {
+    setError("Room name cannot be empty")
+    return
   }
+  if (!token) {
+    router.push("/Auth/login")
+    return
+  }
+  setIsLoading(true)
+  setError("")
+
+  try {
+    const res = await apiFetch("/rooms", {
+      method: "POST",
+      body: JSON.stringify({ name: roomName }),
+    })
+
+    if (res && res.room_id) {
+      setCreatedRoomId(res.room_id)
+      setRoomName("")
+    } else {
+      throw new Error("No room ID returned from server")
+    }
+  } catch (err: any) {
+    setError(err.message || "Failed to create room")
+  } finally {
+    setIsLoading(false)
+  }
+}
 
   const handleJoinRoom = async () => {
     const token = getToken()
@@ -87,14 +87,14 @@ export function WaitingRoom() {
     setError("")
 
     try {
-      await apiFetch(`/rooms/${joinRoomId}/join`, { method: "POST" })
-      router.push(`/room/${joinRoomId}`)
+      await apiFetch(`/rooms/${joinRoomId.trim()}/join`, { method: "POST" })
+      router.push(`/room/${joinRoomId.trim()}`)
     } catch (err: any) {
       setError(err.message || "Failed to join room")
     } finally {
       setIsLoading(false)
     }
-  } 
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-muted">
@@ -107,6 +107,13 @@ export function WaitingRoom() {
           {error && (
             <div className="mb-4 text-sm text-red-500 font-medium text-center">
               {error}
+            </div>
+          )}
+
+          {createdRoomId && (
+            <div className="mb-4 p-3 bg-muted rounded-md">
+              <p className="text-xs text-muted-foreground mb-1">Room ID (share this):</p>
+              <p className="text-sm font-mono font-medium break-all select-all">{createdRoomId}</p>
             </div>
           )}
 
