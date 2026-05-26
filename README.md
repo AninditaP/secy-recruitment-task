@@ -4,13 +4,13 @@
 Create the following `.env` files:
 
 ### backend/servers/Auth/.env
-SECRET_KEY=212fe3eb2185c0de32f696dc4dca5ea86d4a2ad8b0e759ff7ee7595df7b26b5f
+SECRET_KEY="your secret key"
 DATABASE_URL=postgresql://postgres:my_local_secure_password@db:5432/postgres
 CANVAS_DATABASE_URL=postgresql://picasso:picasso123@postgres_canvas:5432/canvas_db
 
 ### backend/servers/server1/.env
 CANVAS_DATABASE_URL=postgresql://picasso:picasso123@postgres_canvas:5432/canvas_db
-SECRET_KEY=212fe3eb2185c0de32f696dc4dca5ea86d4a2ad8b0e759ff7ee7595df7b26b5f
+SECRET_KEY="your secret key"
 REDIS_URL=redis://redis:6379
 SERVER_ID=server1
 PORT=8001
@@ -18,7 +18,7 @@ OWNER_ABSENCE_TIMEOUT=300
 
 ### backend/servers/server2/.env
 CANVAS_DATABASE_URL=postgresql://picasso:picasso123@postgres_canvas:5432/canvas_db
-SECRET_KEY=212fe3eb2185c0de32f696dc4dca5ea86d4a2ad8b0e759ff7ee7595df7b26b5f
+SECRET_KEY="your secret key"
 REDIS_URL=redis://redis:6379
 SERVER_ID=server2
 PORT=8002
