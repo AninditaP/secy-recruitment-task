@@ -6,14 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Copy, CheckCircle2, InfoIcon } from "lucide-react"
-import { useRouter } from "next/dist/client/components/navigation"
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/ui/alert"
+import { useRouter } from "next/navigation"
 
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL || "http://localhost:8003"
 
@@ -59,19 +52,20 @@ export function WaitingRoom() {
       return
     }
     setIsLoading(true)
+    setError("")
 
     try {
-      const res = await apiFetch("/rooms/", {
+      const res = await apiFetch("/rooms", { // Removed trailing slash just in case
         method: "POST",
         body: JSON.stringify({ name: roomName }),
       })
       
-      // Display the newly generated ID directly in an alert
+      // ALERTS only, no routing
       if (res && res.room_id) {
-        alert(`Room created! Your Room ID is: ${res.room_id}`)
+        alert(`Room created successfully!\n\nRoom ID: ${res.room_id}\n\nCopy this ID to join the room via the 'Join Room' tab.`)
+      } else {
+        throw new Error("No room ID returned from server")
       }
-
-      // router.push(`/room/${res.room_id}`)
 
     } catch (err: any) {
       setError(err.message || "Failed to create room")
@@ -91,6 +85,7 @@ export function WaitingRoom() {
       return
     }
     setIsLoading(true)
+    setError("")
 
     try {
       await apiFetch(`/rooms/${joinRoomId}/join`, { method: "POST" })
@@ -110,7 +105,6 @@ export function WaitingRoom() {
           <CardDescription>Create a new room or join an existing one</CardDescription>
         </CardHeader>
         <CardContent>
-
           {error && (
             <div className="mb-4 text-sm text-red-500 font-medium text-center">
               {error}
@@ -131,9 +125,6 @@ export function WaitingRoom() {
                   placeholder="Enter a name for your room"
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleCreateRoom()
-                  }}
                 />
               </div>
               <Button
@@ -153,9 +144,6 @@ export function WaitingRoom() {
                   placeholder="Paste the room ID here"
                   value={joinRoomId}
                   onChange={(e) => setJoinRoomId(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleJoinRoom()
-                  }}
                 />
               </div>
               <Button
@@ -166,7 +154,6 @@ export function WaitingRoom() {
                 {isLoading ? "Joining..." : "Join Room"}
               </Button>
             </TabsContent>
-
           </Tabs>
         </CardContent>
       </Card>

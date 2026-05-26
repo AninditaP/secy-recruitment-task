@@ -19,7 +19,8 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar';
 
-// ── Types ─────────────────────────────────────────────────────────
+
+
 interface Member {
   user_id: string;
   username: string;
@@ -29,21 +30,22 @@ interface RoomInfo {
   room_id: string;
   name: string;
   owner_id: string;
+  owner_username: string;
   is_active: boolean;
   capacity: number;
   member_count: number;
 }
 
-interface CanvasBoardProps {
+interface CanvasRoomProps {
   roomId: string;
   roomInfo: RoomInfo;
   currentUserId: string;
-  wsUrl: string;       // canvas WebSocket  ws://localhost:8080/ws/{roomId}?token=...
-  controlUrl: string;  // control WebSocket ws://localhost:8080/control/{roomId}?token=...
+  wsUrl: string;
   apiFetch: (path: string, options?: RequestInit) => Promise<any>;
 }
 
-// ── Save button ───────────────────────────────────────────────────
+
+
 function SaveButton() {
   const editor = useEditor();
 
@@ -55,14 +57,12 @@ function SaveButton() {
     }
     try {
       const snapshot = editor.getSnapshot();
-      const blob = new Blob(
-        [JSON.stringify(snapshot, null, 2)],
-        { type: 'application/json' }
-      );
-      const url = URL.createObjectURL(blob);
-      const a   = document.createElement('a');
-      a.href     = url;
-      a.download = `canvas-${Date.now()}.tldr`;
+      const json     = JSON.stringify(snapshot, null, 2);
+      const blob     = new Blob([json], { type: 'application/json' });
+      const url      = URL.createObjectURL(blob);
+      const a        = document.createElement('a');
+      a.href         = url;
+      a.download     = `canvas-${Date.now()}.tldr`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -93,46 +93,36 @@ function SaveButton() {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────
-export default function CanvasBoard({
+
+
+export default function CanvasRoom({
   roomId,
   roomInfo,
   currentUserId,
   wsUrl,
-  controlUrl,
   apiFetch,
-}: CanvasBoardProps) {
+}: CanvasRoomProps) {
   const router = useRouter();
+
   const [members,          setMembers]          = useState<Member[]>([]);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
-  // ── Canvas sync via useSync ───────────────────────────────────────
-  const store = useSync({
-    uri: wsUrl,
-    assets: undefined as any
-  });
+  // tldraw sync uses /ws/ endpoint only
+  const store = useSync({ uri: wsUrl, assets: [] as any });
 
-  // ── Control WebSocket — member list + room events ─────────────────
+  // control socket uses /control/ endpoint — strip tldraw query params
+  const controlUrl = wsUrl
+    .replace('/ws/', '/control/')
+    .split('&sessionId')[0];
+
   useEffect(() => {
     const ws = new WebSocket(controlUrl);
 
-    ws.onopen  = () => console.log(`[${roomId}] control WS connected`);
-    ws.onerror = () => console.error(`[${roomId}] control WS error`);
-
     ws.onmessage = (event) => {
+      if (typeof event.data !== 'string') return;
       try {
         const msg = JSON.parse(event.data);
-
         switch (msg.type) {
-
-          case 'members_list':
-            // initial member list sent on connect
-            setMembers(msg.members.map((m: any) => ({
-              user_id:  m.user_id,
-              username: m.username,
-            })));
-            break;
-
           case 'user_joined':
             setMembers((prev) => {
               if (prev.find((m) => m.user_id === msg.user_id)) return prev;
@@ -144,6 +134,13 @@ export default function CanvasBoard({
             setMembers((prev) =>
               prev.filter((m) => m.user_id !== msg.user_id)
             );
+            break;
+
+          case 'members_list':
+            setMembers(msg.members.map((m: any) => ({
+              user_id: m.user_id,
+              username: m.username,
+            })));
             break;
 
           case 'kick':
@@ -163,16 +160,18 @@ export default function CanvasBoard({
             break;
         }
       } catch {
-        // ignore non-JSON
+        console.error('Failed to parse WS message', event.data);
       }
     };
+
+    ws.onerror = () => console.error('Control WS error');
 
     return () => {
       if (ws.readyState === WebSocket.OPEN) ws.close();
     };
   }, [controlUrl, currentUserId]);
 
-  // ── Actions ───────────────────────────────────────────────────────
+
   const handleKick = useCallback(async (targetUserId: string) => {
     try {
       await apiFetch(`/rooms/${roomId}/kick/${targetUserId}`, { method: 'DELETE' });
@@ -192,7 +191,7 @@ export default function CanvasBoard({
 
   const isOwner = roomInfo.owner_id === currentUserId;
 
-  // ── Render ────────────────────────────────────────────────────────
+
   return (
     <SidebarProvider>
       <div className="flex h-screen w-full overflow-hidden">
@@ -212,7 +211,6 @@ export default function CanvasBoard({
 
           <SidebarContent className="flex flex-col h-full">
 
-            {/* Member list */}
             <SidebarGroup className="flex-1">
               <SidebarGroupLabel className="flex items-center gap-2 mt-4">
                 <Users className="w-4 h-4" />
@@ -260,7 +258,7 @@ export default function CanvasBoard({
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {/* Owner / leave controls */}
+
             <div className="px-4 pb-4 flex flex-col gap-2">
               {isOwner ? (
                 showCloseConfirm ? (
@@ -312,7 +310,6 @@ export default function CanvasBoard({
           </SidebarContent>
         </Sidebar>
 
-        {/* ── Canvas ── */}
         <main className="flex-1 relative">
           <Tldraw store={store}>
             <SaveButton />
