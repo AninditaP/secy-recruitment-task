@@ -9,7 +9,8 @@ from canvas.database import (
     remove_member,
     get_member_count,
     is_member,
-    set_room_inactive
+    set_room_inactive,
+    get_members
 )
 from canvas.redis_client import publish
 import os, json
@@ -36,7 +37,6 @@ def get_user_from_token(token: str = Depends(oauth2_scheme)):
 
 class CreateRoomBody(BaseModel):
     name: str
-    capacity: int
 
 
 
@@ -45,10 +45,16 @@ async def create_room_route(
     body: CreateRoomBody,
     user: dict = Depends(get_user_from_token)
 ):
-    if body.capacity < 2 or body.capacity > 4:
-        raise HTTPException(status_code=400, detail="Capacity must be between 2 and 4")
+    room = await create_room(body.name, user["user_id"], user["username"])
+    room_id = str(room.id)
+    return {
+        "room_id": room_id,
+        "name": room.name,
+        "display_name": user["username"],
+        "join_link": f"/room/{room_id}"
+    }
 
-    room = await create_room(body.name, user["user_id"], user["username"], body.capacity)
+    room = await create_room(body.name, user["user_id"], user["username"])
     room_id = str(room.id)
     await add_member(room_id, user["user_id"], user["username"])
 
@@ -58,6 +64,14 @@ async def create_room_route(
         "display_name": user["username"],
         "join_link": f"/room/{room_id}"
     }
+@router.get("/{room_id}/members")
+async def get_room_members(
+    room_id: str,
+    user: dict = Depends(get_user_from_token)
+):
+    members = await get_members(room_id)
+    return {"members": members}
+
 
 
 @router.post("/{room_id}/join")
@@ -72,7 +86,7 @@ async def join_room(
         raise HTTPException(status_code=400, detail="Room is no longer active")
 
     count = await get_member_count(room_id)
-    if count >= room.capacity:
+    if count >= room.max_capacity:
         raise HTTPException(status_code=400, detail="Room is full")
 
     already = await is_member(room_id, user["user_id"])
@@ -100,8 +114,8 @@ async def get_room_info(
         "owner_id": str(room.owner_id),
         "owner_username": room.owner_username,
         "is_active": room.is_active,
-        "capacity": room.capacity,
-        "member_count": count
+        "capacity": room.max_capacity,
+        "member_count": room.member_count
     }
 
 

@@ -21,7 +21,8 @@ class Room(Base):
     name:           Mapped[str]       = mapped_column(String, nullable=False)
     owner_id:       Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     owner_username: Mapped[str]       = mapped_column(String, nullable=False)
-    capacity:       Mapped[int]       = mapped_column(Integer, nullable=False)
+    max_capacity:   Mapped[int]       = mapped_column(Integer, default=4, server_default="4")
+    member_count:   Mapped[int]       = mapped_column(Integer, default=0, server_default="0")
     is_active:      Mapped[bool]      = mapped_column(Boolean, default=True)
     created_at:     Mapped[datetime]  = mapped_column(DateTime, server_default=func.now())
 
@@ -47,13 +48,13 @@ async def init_db():
 
 
 
-async def create_room(name: str, owner_id: str, owner_username: str, capacity: int):
+async def create_room(name: str, owner_id: str, owner_username: str):
     async with AsyncSessionLocal() as session:
         room = Room(
             name=name,
             owner_id=uuid.UUID(owner_id),
             owner_username=owner_username,
-            capacity=capacity
+            member_count=1       
         )
         session.add(room)
         await session.flush()
@@ -67,7 +68,6 @@ async def create_room(name: str, owner_id: str, owner_username: str, capacity: i
         await session.commit()
         await session.refresh(room)
         return room
-
 
 async def get_room(room_id: str):
     async with AsyncSessionLocal() as session:
@@ -85,12 +85,7 @@ async def set_room_inactive(room_id: str):
         await session.commit()
 
 
-
 async def add_member(room_id: str, user_id: str, username: str):
-    """
-    Adds user to room using their actual user_id from JWT.
-    ON CONFLICT DO NOTHING — safe to call if already a member.
-    """
     async with AsyncSessionLocal() as session:
         member = RoomMember(
             room_id=uuid.UUID(room_id),
@@ -98,17 +93,26 @@ async def add_member(room_id: str, user_id: str, username: str):
             username=username
         )
         session.add(member)
+        await session.flush()
+        await session.execute(
+            update(Room)
+            .where(Room.id == uuid.UUID(room_id))
+            .values(member_count=Room.member_count + 1)
+        )
         await session.commit()
 
-
 async def remove_member(room_id: str, user_id: str):
-    """Removes member by user_id. Called on disconnect or leave."""
     async with AsyncSessionLocal() as session:
         await session.execute(
             delete(RoomMember).where(
                 RoomMember.room_id == uuid.UUID(room_id),
                 RoomMember.user_id == uuid.UUID(user_id)
             )
+        )
+        await session.execute(
+            update(Room)
+            .where(Room.id == uuid.UUID(room_id))
+            .values(member_count=Room.member_count - 1)
         )
         await session.commit()
 

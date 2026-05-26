@@ -6,32 +6,101 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Copy, CheckCircle2 } from "lucide-react"
+import { Copy, CheckCircle2, InfoIcon } from "lucide-react"
+import { useRouter } from "next/dist/client/components/navigation"
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert"
+
+const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL || "http://localhost:8003"
+
+function getToken() {
+  return typeof window !== "undefined"
+    ? localStorage.getItem("access_token")
+    : null
+}
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const token = getToken()
+  const res = await fetch(`${AUTH_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || "Request failed")
+  }
+  return res.json()
+}
 
 export function WaitingRoom() {
-  const [roomId, setRoomId] = useState<string | null>(null)
+  const router = useRouter()
+  const [roomName, setRoomName] = useState("")
   const [joinRoomId, setJoinRoomId] = useState("")
-  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
 
-  const generateRoomId = () => {
-    const newRoomId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-    setRoomId(newRoomId)
-  }
+  const handleCreateRoom = async () => {
+    const token = getToken()
+   
+    if (!roomName.trim()) {
+      setError("Room name cannot be empty")
+      return
+    }
+    if (!token) {
+      router.push("/Auth/login")
+      return
+    }
+    setIsLoading(true)
 
-  const copyRoomId = () => {
-    if (roomId) {
-      navigator.clipboard.writeText(roomId)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+    try {
+      const res = await apiFetch("/rooms/", {
+        method: "POST",
+        body: JSON.stringify({ name: roomName }),
+      })
+      
+      // Display the newly generated ID directly in an alert
+      if (res && res.room_id) {
+        alert(`Room created! Your Room ID is: ${res.room_id}`)
+      }
+
+      // router.push(`/room/${res.room_id}`)
+
+    } catch (err: any) {
+      setError(err.message || "Failed to create room")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const handleJoinRoom = () => {
-    if (joinRoomId.trim()) {
-      console.log("Joining room:", joinRoomId)
-      // TODO: Implement join room logic
+  const handleJoinRoom = async () => {
+    const token = getToken()
+    if (!joinRoomId.trim()) {
+      setError("Room ID cannot be empty")
+      return
     }
-  }
+    if (!token) {
+      router.push("/Auth/login")
+      return
+    }
+    setIsLoading(true)
+
+    try {
+      await apiFetch(`/rooms/${joinRoomId}/join`, { method: "POST" })
+      router.push(`/room/${joinRoomId}`)
+    } catch (err: any) {
+      setError(err.message || "Failed to join room")
+    } finally {
+      setIsLoading(false)
+    }
+  } 
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-muted">
@@ -41,6 +110,13 @@ export function WaitingRoom() {
           <CardDescription>Create a new room or join an existing one</CardDescription>
         </CardHeader>
         <CardContent>
+
+          {error && (
+            <div className="mb-4 text-sm text-red-500 font-medium text-center">
+              {error}
+            </div>
+          )}
+
           <Tabs defaultValue="create" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="create">Create Room</TabsTrigger>
@@ -49,37 +125,23 @@ export function WaitingRoom() {
 
             <TabsContent value="create" className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="room-id-display">Room ID</Label>
-                {roomId ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 px-3 py-2 bg-muted rounded-md font-mono text-sm">
-                      {roomId}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={copyRoomId}
-                      className="flex items-center gap-2"
-                    >
-                      {copied ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          Copy
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Click "Create Room" to generate a room ID</p>
-                )}
+                <Label htmlFor="room-name">Room Name</Label>
+                <Input
+                  id="room-name"
+                  placeholder="Enter a name for your room"
+                  value={roomName}
+                  onChange={(e) => setRoomName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreateRoom()
+                  }}
+                />
               </div>
-              <Button onClick={generateRoomId} className="w-full">
-                Create New Room
+              <Button
+                onClick={handleCreateRoom}
+                disabled={isLoading || !roomName.trim()}
+                className="w-full"
+              >
+                {isLoading ? "Creating..." : "Create Room"}
               </Button>
             </TabsContent>
 
@@ -88,24 +150,23 @@ export function WaitingRoom() {
                 <Label htmlFor="join-room-id">Room ID</Label>
                 <Input
                   id="join-room-id"
-                  placeholder="Enter room ID"
+                  placeholder="Paste the room ID here"
                   value={joinRoomId}
                   onChange={(e) => setJoinRoomId(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleJoinRoom()
-                    }
+                    if (e.key === "Enter") handleJoinRoom()
                   }}
                 />
               </div>
               <Button
                 onClick={handleJoinRoom}
-                disabled={!joinRoomId.trim()}
+                disabled={isLoading || !joinRoomId.trim()}
                 className="w-full"
               >
-                Join Room
+                {isLoading ? "Joining..." : "Join Room"}
               </Button>
             </TabsContent>
+
           </Tabs>
         </CardContent>
       </Card>

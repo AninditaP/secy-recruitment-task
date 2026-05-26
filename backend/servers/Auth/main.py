@@ -77,15 +77,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserPublic:
     return UserPublic(username=user.username, user_id=str(user.user_id))
 
 @app.on_event("startup")
-async def startup_event():
-    init_db()
-   
-    if hasattr(engine, "run_sync"):
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    else:
-        # If your engine is standard synchronous SQLAlchemy
-        Base.metadata.create_all(bind=engine)
+async def on_startup():
+    init_db()                       
+    from canvas.database import init_db as canvas_init_db
+    await canvas_init_db()
 
 @app.post("/register", status_code=201, summary="Create a new user")
 def register_user(body: UserCreate):

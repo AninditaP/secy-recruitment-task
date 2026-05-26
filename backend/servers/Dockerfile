@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ${SERVER_ID}/ .
 COPY canvas/ ./canvas/
 
+
 EXPOSE ${PORT}
 
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --reload
